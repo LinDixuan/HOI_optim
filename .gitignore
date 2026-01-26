@@ -1,0 +1,11 @@
+.vscode
+__pycache__
+
+data/*
+results/
+experiments/
+
+visualizer_results/
+
+removed/
+
