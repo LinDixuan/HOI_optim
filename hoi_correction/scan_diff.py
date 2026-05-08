@@ -10,61 +10,6 @@ from human_body_prior.body_model.body_model import BodyModel
 from tqdm import tqdm
 MODEL_PATH = 'models'
 
-######################################## smplh 10 ########################################
-smplh_model_male = smplx.create(MODEL_PATH, model_type='smplh',
-        gender="male",
-        use_pca=False,
-        ext='pkl')
-
-smplh_model_female = smplx.create(MODEL_PATH, model_type='smplh',
-        gender="female",
-        use_pca=False,
-        ext='pkl')
-
-smplh_model_neutral = smplx.create(MODEL_PATH, model_type='smplh',
-        gender="neutral",
-        use_pca=False,
-        ext='pkl')
-
-smplh10 = {'male': smplh_model_male, 'female': smplh_model_female, 'neutral': smplh_model_neutral}
-######################################## smplx 10 ########################################
-smplx_model_male = smplx.create(MODEL_PATH, model_type='smplx',
-        gender = 'male',
-        use_pca=False,
-        ext='pkl')
-
-smplx_model_female = smplx.create(MODEL_PATH, model_type='smplx',
-        gender="female",
-        use_pca=False,
-        ext='pkl')
-
-smplx_model_neutral = smplx.create(MODEL_PATH, model_type='smplx',
-        gender="neutral",
-        use_pca=False,
-        ext='pkl')
-
-smplx10 = {'male': smplx_model_male, 'female': smplx_model_female, 'neutral': smplx_model_neutral}
-######################################## smplx 10 pca 12 ########################################
-smplx12_model_male = smplx.create(MODEL_PATH, model_type='smplx',
-        gender="male",
-        num_pca_comps=12,
-        use_pca=True,
-        flat_hand_mean = True,
-        ext='pkl')
-
-smplx12_model_female = smplx.create(MODEL_PATH, model_type='smplx',
-        gender="female",
-        num_pca_comps=12,
-        use_pca=True,
-        flat_hand_mean = True,
-        ext='pkl')
-smplx12_model_neutral = smplx.create(MODEL_PATH, model_type='smplx',
-        gender="neutral",
-        num_pca_comps=12,
-        use_pca=True,
-        flat_hand_mean = True,
-        ext='pkl')
-smplx12 = {'male': smplx12_model_male, 'female': smplx12_model_female, 'neutral': smplx12_model_neutral}
 ######################################## smplh 16 ########################################
 SMPLH_PATH = MODEL_PATH+'/smplh'
 surface_model_male_fname = os.path.join(SMPLH_PATH,'female', "model.npz")
@@ -96,6 +41,7 @@ SMPLX_PATH = MODEL_PATH+'/smplx'
 surface_model_male_fname = os.path.join(SMPLX_PATH,"SMPLX_MALE.npz")
 surface_model_female_fname = os.path.join(SMPLX_PATH,"SMPLX_FEMALE.npz")
 surface_model_neutral_fname = os.path.join(SMPLX_PATH, "SMPLX_NEUTRAL.npz")
+
 
 smplx16_model_male = BodyModel(bm_fname=surface_model_male_fname,
         num_betas=num_betas,
@@ -281,7 +227,7 @@ def scan_dataset(dataset_path, threshold=0.4, joints=None, pose_file="human.npz"
             canonical_joints = get_mean_pose_joints(seq, seq_root, 'smplx', 10)
         elif dataset_name.upper() == 'INTERCAP':
             canonical_joints = get_mean_pose_joints(seq, seq_root, 'smplx', 10, True)
-        elif dataset_name.upper() == 'OMOMO':
+        elif dataset_name.upper() == 'OMOMO_RAW':
             canonical_joints = get_mean_pose_joints(seq, seq_root, 'smplx', 16)
 
         if not os.path.isfile(npz_path):
@@ -448,7 +394,7 @@ def main():
     args = ap.parse_args()
 
     joints_sel = parse_joints(args.joints)
-    dataset_path = os.path.join('./data', args.dataset)
+    dataset_path = os.path.join('.', args.dataset)
     scan_dataset(
         dataset_path=dataset_path,
         threshold=args.threshold,

@@ -32,7 +32,7 @@ from utils import vertex_normals
 # from render.mesh_viz import visualize_body_obj
 from loss import point2point_signed
 from prior import *
-from fix_pose import fix_joint_poses_simple, pose_delta_axis_angle
+from fix_pose import fix_joint_poses_simple, pose_delta_axis_angle, fix_joint_poses_hard, fix_palm_by_segment_sampling_with_contact_list
 from interpolate import smooth_flips
 from optimize_wrist import optimize_poses
 
@@ -60,23 +60,23 @@ smplx16 = {}
 def load_models():
     global smplh10, smplx10, smplx12, smplh16, smplx16
     
-    # SMPLH 10
-    smplh_model_male = smplx.create(MODEL_PATH, model_type='smplh', gender="male", use_pca=False, ext='pkl')
-    smplh_model_female = smplx.create(MODEL_PATH, model_type='smplh', gender="female", use_pca=False, ext='pkl')
-    smplh_model_neutral = smplx.create(MODEL_PATH, model_type='smplh', gender="neutral", use_pca=False, ext='pkl')
-    smplh10 = {'male': smplh_model_male.to(device), 'female': smplh_model_female.to(device), 'neutral': smplh_model_neutral.to(device)}
-    
-    # SMPLX 10
-    smplx_model_male = smplx.create(MODEL_PATH, model_type='smplx', gender='male', use_pca=False, ext='pkl')
-    smplx_model_female = smplx.create(MODEL_PATH, model_type='smplx', gender="female", use_pca=False, ext='pkl')
-    smplx_model_neutral = smplx.create(MODEL_PATH, model_type='smplx', gender="neutral", use_pca=False, ext='pkl')
-    smplx10 = {'male': smplx_model_male.to(device), 'female': smplx_model_female.to(device), 'neutral': smplx_model_neutral.to(device)}
-    
-    # SMPLX 12
-    smplx12_model_male = smplx.create(MODEL_PATH, model_type='smplx', gender="male", num_pca_comps=12, use_pca=True, flat_hand_mean=True, ext='pkl')
-    smplx12_model_female = smplx.create(MODEL_PATH, model_type='smplx', gender="female", num_pca_comps=12, use_pca=True, flat_hand_mean=True, ext='pkl')
-    smplx12_model_neutral = smplx.create(MODEL_PATH, model_type='smplx', gender="neutral", num_pca_comps=12, use_pca=True, flat_hand_mean=True, ext='pkl')
-    smplx12 = {'male': smplx12_model_male.to(device), 'female': smplx12_model_female.to(device), 'neutral': smplx12_model_neutral.to(device)}
+    # # SMPLH 10
+    # smplh_model_male = smplx.create(MODEL_PATH, model_type='smplh', gender="male", use_pca=False, ext='pkl')
+    # smplh_model_female = smplx.create(MODEL_PATH, model_type='smplh', gender="female", use_pca=False, ext='pkl')
+    # smplh_model_neutral = smplx.create(MODEL_PATH, model_type='smplh', gender="neutral", use_pca=False, ext='pkl')
+    # smplh10 = {'male': smplh_model_male.to(device), 'female': smplh_model_female.to(device), 'neutral': smplh_model_neutral.to(device)}
+    #
+    # # SMPLX 10
+    # smplx_model_male = smplx.create(MODEL_PATH, model_type='smplx', gender='male', use_pca=False, ext='pkl')
+    # smplx_model_female = smplx.create(MODEL_PATH, model_type='smplx', gender="female", use_pca=False, ext='pkl')
+    # smplx_model_neutral = smplx.create(MODEL_PATH, model_type='smplx', gender="neutral", use_pca=False, ext='pkl')
+    # smplx10 = {'male': smplx_model_male.to(device), 'female': smplx_model_female.to(device), 'neutral': smplx_model_neutral.to(device)}
+    #
+    # # SMPLX 12
+    # smplx12_model_male = smplx.create(MODEL_PATH, model_type='smplx', gender="male", num_pca_comps=12, use_pca=True, flat_hand_mean=True, ext='pkl')
+    # smplx12_model_female = smplx.create(MODEL_PATH, model_type='smplx', gender="female", num_pca_comps=12, use_pca=True, flat_hand_mean=True, ext='pkl')
+    # smplx12_model_neutral = smplx.create(MODEL_PATH, model_type='smplx', gender="neutral", num_pca_comps=12, use_pca=True, flat_hand_mean=True, ext='pkl')
+    # smplx12 = {'male': smplx12_model_male.to(device), 'female': smplx12_model_female.to(device), 'neutral': smplx12_model_neutral.to(device)}
     
     # SMPLH 16
     SMPLH_PATH = MODEL_PATH+'/smplh'
@@ -260,6 +260,7 @@ def compute_palm_contact_and_orientation(
     rel_dir = rel / (dists.unsqueeze(-1) + 1e-8)       # (T, N, 3)
     # 7.2) Calculate cosine: dot product of normals.unsqueeze(1) and rel_dir
     cosines = (normals.unsqueeze(1) * rel_dir).sum(dim=2)  # (T, N)
+
     # 7.3) Filter: cosines >= cos_thresh and dists < contact_thresh
     mask = (cosines >= cos_thresh) & (dists < orient_dist_thresh)  # (T, N)
     orient_mask = mask.any(dim=1)  # (T,)
@@ -594,7 +595,7 @@ def precompute_hand_object_distances(verts, verts_obj_transformed, obj_normals, 
     correction_thresh = -0.1
     penetration_thresh = 0
     contact_thresh = 0.02  # 2cm threshold for contact
-    close_thresh = 0.06    # 20cm threshold for "close" frames
+    close_thresh = 0.15    # 20cm threshold for "close" frames
     
     right_pen_mask = (right_hand_min_dist <= penetration_thresh) & (right_hand_min_dist >= correction_thresh)
     left_pen_mask = (left_hand_min_dist <= penetration_thresh) & (left_hand_min_dist >= correction_thresh)
@@ -602,8 +603,8 @@ def precompute_hand_object_distances(verts, verts_obj_transformed, obj_normals, 
     right_contact_mask = (right_hand_min_dist <= contact_thresh) & (right_hand_min_dist >= correction_thresh)
     left_contact_mask = (left_hand_min_dist <= contact_thresh) & (left_hand_min_dist >= correction_thresh)
     
-    right_close_mask = (right_hand_min_dist <= close_thresh) & (right_hand_min_dist >= correction_thresh)
-    left_close_mask = (left_hand_min_dist <= close_thresh) & (left_hand_min_dist >= correction_thresh)
+    right_close_mask = right_hand_min_dist <= close_thresh
+    left_close_mask = left_hand_min_dist <= close_thresh
     
     # Create optimization masks (frames that should be optimized for penetration)
     right_optimize_mask = (right_hand_min_dist <= close_thresh) & (right_hand_min_dist >= correction_thresh)
@@ -789,18 +790,21 @@ def main(dataset_path, sequence_name, threshold):
     """Main pipeline function - Supports all datasets for Steps 1&2, SMPLX16 for optimization"""
     # Derived paths
     human_path = os.path.join(dataset_path, 'sequences_canonical')
-    object_path = os.path.join(dataset_path, 'objects')
+    # human_path = "/move/u/dixuan/pj/InterAct/updated_fix"
+    object_path = "omomo/objects"
     dataset_path_name = dataset_path.split('/')[-1]
+    seqs = os.listdir(human_path)
     data_name = []
-    if sequence_name is None:
-        # reads from scan_results.csv
-        with open('scan_results.csv', 'r') as f:
-            reader = csv.reader(f)
-            for row in reader:
-                data_name.append(row[0])
-    else:
-        data_name = data_name + [sequence_name]
-    
+    # if sequence_name is None:
+    #     # reads from scan_results.csv
+    #     with open('scan_results.csv', 'r') as f:
+    #         reader = csv.reader(f)
+    #         for row in reader:
+    #             data_name.append(row[0])
+    # else:
+    #     data_name = data_name + [sequence_name]
+    data_name = data_name + seqs
+
     for sequence_name in tqdm(data_name):
         if dataset_path_name.upper() == 'BEHAVE' or dataset_path_name.upper() == 'BEHAVE_CORRECT':
             verts, joints, faces, poses, betas, trans, gender = visualize_smpl(sequence_name, human_path, 'smplh', 10)
@@ -821,7 +825,7 @@ def main(dataset_path, sequence_name, threshold):
             raise ValueError(f"Unsupported dataset: {dataset_path_name}")
 
         # Load object data
-        with np.load(os.path.join(human_path, sequence_name, 'object.npz'), allow_pickle=True) as f:
+        with np.load(os.path.join("omomo/sequences_canonical", sequence_name, 'object.npz'), allow_pickle=True) as f:
             obj_angles, obj_trans, obj_name = f['angles'], f['trans'], str(f['name'])
         angle_matrix = Rotation.from_rotvec(obj_angles).as_matrix()
 
@@ -830,11 +834,17 @@ def main(dataset_path, sequence_name, threshold):
         ov = np.array(OBJ_MESH.vertices).astype(np.float32)
         object_faces = OBJ_MESH.faces.astype(np.int32)
         device = torch.device('cuda:0')
-        ov = torch.from_numpy(ov).float().to(device)
-        rot = torch.tensor(angle_matrix).float().to(device)
-        obj_trans = torch.tensor(obj_trans).float().to(device)
-        object_verts = torch.einsum('ni,tij->tnj', ov, rot.permute(0,2,1)) + obj_trans.unsqueeze(1)
+        # ov = torch.from_numpy(ov).float().to(device)
+        # rot = torch.tensor(angle_matrix).float().to(device)
+        # obj_trans = torch.tensor(obj_trans).float().to(device)
+        # object_verts = torch.einsum('ni,tij->tnj', ov, rot.permute(0,2,1)) + obj_trans.unsqueeze(1)
+
+        angle_matrix = Rotation.from_rotvec(obj_angles).as_matrix()
+        obj_verts = (OBJ_MESH.vertices)[None, ...]
+        object_verts = np.matmul(obj_verts, np.transpose(angle_matrix, (0, 2, 1))) + obj_trans[:, None, :]
+        object_verts = torch.tensor(object_verts, dtype=torch.float32, device=device)
         render_path = f'./save_fix/{dataset_path_name}'
+
         os.makedirs(render_path, exist_ok=True)
         T = poses.shape[0]
 
@@ -857,7 +867,7 @@ def main(dataset_path, sequence_name, threshold):
         
         obj_normals=vertex_normals(object_verts,torch.tensor(object_faces.astype(np.float32)).unsqueeze(0).repeat(object_verts.shape[0],1,1).to(device))
         distance_info = precompute_hand_object_distances(verts, object_verts, obj_normals, rhand_idx, lhand_idx)
-        
+
         # Print contact information for both hands
         if distance_info is not None:
             left_pen_frames = torch.where(distance_info['left_pen_mask'])[0].tolist()
@@ -870,11 +880,43 @@ def main(dataset_path, sequence_name, threshold):
         
             left_contact_frames = torch.where(distance_info['left_contact_mask'])[0].tolist()
             right_contact_frames = torch.where(distance_info['right_contact_mask'])[0].tolist()
+            left_close_frames = torch.where(distance_info['left_close_mask'])[0].tolist()
+            right_close_frames = torch.where(distance_info['right_close_mask'])[0].tolist()
             left_contact_unique_frames = sorted(list(set(left_contact_frames)))
             right_contact_unique_frames = sorted(list(set(right_contact_frames)))
         else:
             print("Distance info not available")
 
+        axis_left = canonical_joints[LEFT_WRIST] - canonical_joints[LEFT_ELBOW]
+        axis_left /= np.linalg.norm(axis_left)
+        axis_right = canonical_joints[RIGHT_WRIST] - canonical_joints[RIGHT_ELBOW]
+        axis_right /= np.linalg.norm(axis_right)
+
+        poses = fix_palm_by_segment_sampling_with_contact_list(
+            poses=poses,
+            betas = betas,
+            trans = trans,
+            joints=joints,
+            object_verts=object_verts,
+            cano_axis=axis_left,
+            smpl_model=smplx16[gender],
+            contact_frame_list=left_close_frames,
+            is_left_hand=True,
+            cosine_thres=-0.1,
+        )
+
+        poses = fix_palm_by_segment_sampling_with_contact_list(
+            poses=poses,
+            betas=betas,
+            trans=trans,
+            joints=joints,
+            object_verts=object_verts,
+            cano_axis=axis_right,
+            smpl_model=smplx16[gender],
+            contact_frame_list=right_close_frames,
+            is_left_hand=False,
+            cosine_thres=-0.1,
+        )
 
         # Initialize fix tracker
         fix_tracker = FixTracker(T)
@@ -889,34 +931,50 @@ def main(dataset_path, sequence_name, threshold):
         # view poses from (N, 156) to (N, 52, 3)
         poses = poses.reshape(-1, 52, 3)
         diff_angle, diff_axis = pose_delta_axis_angle(poses)
-        
-        for j in [13, 16, 18, 20, 14, 17, 19, 21]:
+
+        start_ids = []
+        # for j in [13, 16, 18, 20, 14, 17, 19, 21]:
+        for j in [18, 20, 19, 21]:
             for i in range(diff_angle.shape[0]):
                 if abs(diff_angle[i, j]) > threshold:
                     joints_to_fix.append(j)
+                    if j in [13, 16, 18, 20,]:
+                        if len(left_close_frames) > 1:
+                            left_contact_mid = len(left_close_frames) // 2 - 1
+                            idx = left_close_frames[left_contact_mid]
+                        else:
+                            idx = diff_angle.shape[0] // 2
+                    else:
+                        if len(right_close_frames) > 1:
+                            right_contact_mid = len(right_close_frames) // 2 - 1
+                            idx = right_close_frames[right_contact_mid]
+                        else:
+                            idx = diff_angle.shape[0] // 2
+                    if i == idx:
+                        idx = idx + 1
+                    start_ids.append(idx)
                     break
 
-        for joint in joints_to_fix:
-            poses, fixed_boundaries = fix_joint_poses_simple(poses, joint, angle_thresh=threshold)
+        for joint, start_id in zip(joints_to_fix, start_ids):
+            poses, fixed_boundaries = fix_joint_poses_hard(poses, joint, angle_thresh=threshold, start_idx=start_id)
 
             joint_fixed_frames[joint].extend(range(fixed_boundaries[0],poses.shape[0]))
-        
+
         joint_to_tracker_idx = {
             LEFT_COLLAR: 0, RIGHT_COLLAR: 1,
             LEFT_SHOULDER: 2, RIGHT_SHOULDER: 3,
             LEFT_ELBOW: 4, RIGHT_ELBOW: 5,
             LEFT_WRIST: 6, RIGHT_WRIST: 7
         }
-        
+
         # Mark the frames that were actually fixed during the joint pose fixing process
         for joint_idx, fixed_frames in joint_fixed_frames.items():
             if fixed_frames:  # Only process joints that had frames fixed
                 tracker_joint_idx = joint_to_tracker_idx[joint_idx]
                 # print(f"Joint {joint_idx}: {len(fixed_frames)} frames fixed")
                 fix_tracker.mark_joint_fixed(fixed_frames, [tracker_joint_idx])
-        
+
         total_joint_fixes = fix_tracker.get_joint_fixed_frames_and_joints().sum()
-        # print(f"Joint pose fixing applied to {total_joint_fixes} joint-frame combinations")
         
         poses = poses.reshape(-1, 156)
         poses = poses.cpu().numpy()
@@ -934,7 +992,7 @@ def main(dataset_path, sequence_name, threshold):
         contact_mask_l, orient_mask_l, _ = compute_palm_contact_and_orientation(
             joints, object_verts, hand='left'
         )
-        
+
         contact_mask_r, orient_mask_r, _ = compute_palm_contact_and_orientation(
             joints, object_verts, hand='right'
         )
@@ -956,11 +1014,11 @@ def main(dataset_path, sequence_name, threshold):
         )
         if right_fixed_frames:
             fix_tracker.mark_palm_fixed(right_fixed_frames, [7])  # right_wrist = index 7
-        twist_left_list, twist_right_list, elbow_left_list, elbow_right_list = detect_hand_twist_from_canonical_batch(poses, canonical_joints)
- 
+        # twist_left_list, twist_right_list, elbow_left_list, elbow_right_list = detect_hand_twist_from_canonical_batch(poses, canonical_joints)
+
 
         # Step 2: Palm orientation fixing
-        
+
         # Regenerate joints from updated poses after joint fixing
         # print("Regenerating joints from updated poses...")
         if dataset_path_name.upper() == 'BEHAVE' or dataset_path_name.upper() == 'BEHAVE_CORRECT':
@@ -973,9 +1031,9 @@ def main(dataset_path, sequence_name, threshold):
             _, joints, _ = regen_smpl(sequence_name, poses, betas, trans, gender, 'smplx', 10, True)
         elif dataset_path_name.upper() == 'OMOMO' or dataset_path_name.upper() == 'OMOMO_CORRECT':
             _, joints, _ = regen_smpl(sequence_name, poses, betas, trans, gender, 'smplx', 16)
-        
+
         # Compute twist angles for palm fixing
-        twist_left_list, twist_right_list, elbow_left_list, elbow_right_list = detect_hand_twist_from_canonical_batch(poses, canonical_joints)
+        # twist_left_list, twist_right_list, elbow_left_list, elbow_right_list = detect_hand_twist_from_canonical_batch(poses, canonical_joints)
         contact_mask_l, orient_mask_l, _ = compute_palm_contact_and_orientation(
             joints, object_verts, hand='left'
         )
@@ -984,22 +1042,22 @@ def main(dataset_path, sequence_name, threshold):
         )
 
         joint_fixed_frames = {joint_idx: [] for joint_idx in [LEFT_COLLAR, RIGHT_COLLAR, LEFT_SHOULDER, RIGHT_SHOULDER, LEFT_ELBOW, RIGHT_ELBOW, LEFT_WRIST, RIGHT_WRIST]}
-        
+
         # Get information about which joints were fixed from the fix tracker
         all_fixed_joints = fix_tracker.get_fixed_frames_and_joints()
-        
+
         # Create mask for the smoothing function
         # joint_optimization_mask: (8,) - which joints were optimized
         joint_optimization_mask = np.any(all_fixed_joints, axis=0)  # (8,) - True if joint was fixed in any frame
         poses = smooth_flips(poses, joint_optimization_mask, window_size=10)
-        
+
         # Step 3: Optimization with selective loss (uses SMPLX16 model)
         all_fixed_joints = fix_tracker.get_fixed_frames_and_joints()
         total_fixed_combinations = all_fixed_joints.sum()
         original_poses = poses.copy()
         if total_fixed_combinations > 0:
             poses = optimize_poses(
-                poses, betas, trans, gender, object_verts, obj_normals, fix_tracker, 
+                poses, betas, trans, gender, object_verts, obj_normals, fix_tracker,
                 distance_info, rhand_idx = rhand_idx, lhand_idx = lhand_idx,
                 num_epochs=600, lr = 0.001, canonical_joints=canonical_joints, smpl_model=smplx16[gender]
             )
@@ -1009,7 +1067,7 @@ def main(dataset_path, sequence_name, threshold):
             #     print("QUICK POSE COMPARISON (Before vs After Optimization)")
             #     print("="*60)
             #     quick_pose_comparison(original_poses, poses)
-            
+
             # Mark only the specific joint-frame combinations that were actually fixed as optimized
             fix_tracker.mark_optimized_from_mask(all_fixed_joints)
             # fixed_sequence_name.append(sequence_name)
@@ -1022,7 +1080,9 @@ def main(dataset_path, sequence_name, threshold):
         # fix_tracker.print_summary()
 
         # Save final results
-        fixed_human_path = os.path.join(human_path, sequence_name, 'human.npz')
+        save_path = os.path.join("updated_fix", sequence_name)
+        os.makedirs(save_path, exist_ok=True)
+        fixed_human_path = os.path.join(save_path, 'human.npz')
         np.savez(fixed_human_path, 
                 poses=poses, 
                 betas=betas, 
@@ -1104,8 +1164,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Comprehensive pipeline: Joint fix + Palm fix + Optimization")
     parser.add_argument("--dataset", required=True, help="Path to the dataset root.")
     parser.add_argument("--sequence_name", required=False, default=None, help="Name of the sequence.")
-    parser.add_argument("--threshold", type=float, default=0.2, help="Angle threshold in radians for flip detection.")
+    parser.add_argument("--threshold", type=float, default=0.35, help="Angle threshold in radians for flip detection.")
     # parser.add_argument("--visualize", type = bool, default=False, help="Whether to visualize the results.")
     args = parser.parse_args()
-    dataset_path = os.path.join('./data', args.dataset)
+    dataset_path = os.path.join('./', args.dataset)
     main(dataset_path, args.sequence_name, args.threshold)

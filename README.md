@@ -13,20 +13,15 @@ Download the **OMOMO** dataset and ensure the directory structure looks like thi
 
 ## Hand Correction
 
-Run the optimization process for hand-object interaction:
+Run the wrist correction and optimization process for hand-object interaction:
 
 ```
-python hoi_correction/optimize.py
+python hoi_correction/correct_wrist.py --dataset omomo
+
+python hoi_correction/finetune_stage2.py 
 
 ```
 
-## Run Evaluation
-Run the evaluation script on the OMOMO dataset:
-
-```
-python visualization/omomo_eval.py
-
-```
 
 
 ## Run Visualization
@@ -34,7 +29,13 @@ python visualization/omomo_eval.py
 Generate visualizations for the results:
 
 ```
-python visualization/omomo_vis.py
+python visualization/optim_vis.py
 
 ```
 
+Generate the visualization for a single sequence:
+
+```
+python visualization/optim_vis.py --seq_name <sequence_name>
+
+```
